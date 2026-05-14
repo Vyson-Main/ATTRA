@@ -31,28 +31,33 @@ const StudentModel = {
   },
 
   /**
-   * Replace all students (used after class list upload).
-   * Runs in a transaction: truncate → insert → update user accounts.
+   * Replace all students using individual password hashes.
+   * Each student's default password = their own student_id.
    */
-  async replaceAll(students, defaultPasswordHash) {
+  async replaceAllWithHashes(students) {
     const tx = await transaction();
     try {
       await tx.query('TRUNCATE TABLE students RESTART IDENTITY CASCADE');
 
       for (const s of students) {
+        // Insert into students table
         await tx.query(
           `INSERT INTO students (student_id, name, section)
            VALUES ($1, $2, $3)
-           ON CONFLICT (student_id) DO UPDATE SET name = EXCLUDED.name, section = EXCLUDED.section`,
+           ON CONFLICT (student_id) DO UPDATE
+             SET name = EXCLUDED.name, section = EXCLUDED.section`,
           [s.student_id, s.name, s.section || null]
         );
-        // Upsert corresponding user account
+
+        // Upsert user account — password = their own ID
         await tx.query(
           `INSERT INTO users (student_id, name, section, password_hash, role)
            VALUES ($1, $2, $3, $4, 'student')
            ON CONFLICT (student_id) DO UPDATE
-             SET name = EXCLUDED.name, section = EXCLUDED.section`,
-          [s.student_id, s.name, s.section || null, defaultPasswordHash]
+             SET name      = EXCLUDED.name,
+                 section   = EXCLUDED.section,
+                 password_hash = EXCLUDED.password_hash`,
+          [s.student_id, s.name, s.section || null, s.passwordHash]
         );
       }
 
@@ -61,6 +66,12 @@ const StudentModel = {
       await tx.rollback();
       throw err;
     }
+  },
+
+  // Keep old method for backwards compatibility
+  async replaceAll(students, defaultPasswordHash) {
+    const withHashes = students.map(s => ({ ...s, passwordHash: defaultPasswordHash }));
+    return this.replaceAllWithHashes(withHashes);
   },
 };
 
