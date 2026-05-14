@@ -19,7 +19,6 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // ── CORS
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173').split(',');
 app.use(cors({
-  app.use(cors({
   origin: true,
   credentials: true,
 }));
