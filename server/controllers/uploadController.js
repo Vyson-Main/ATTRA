@@ -6,7 +6,8 @@ const { hash } = require('../services/hashService');
 
 /**
  * POST /api/upload/classlist
- * Teacher uploads CSV/Excel file → parse → replace student list.
+ * Each student's default password = their own student ID.
+ * They should change it on first login.
  */
 async function uploadClassList(req, res, next) {
   try {
@@ -20,16 +21,20 @@ async function uploadClassList(req, res, next) {
     try {
       students = parseClassList(filePath);
     } catch (parseErr) {
-      // Clean up the uploaded file on parse failure
       fs.unlinkSync(filePath);
       return res.status(422).json({ error: parseErr.message });
     }
 
-    // Default password for newly imported students: "student123"
-    const defaultPassword = await hash('student123');
-    await StudentModel.replaceAll(students, defaultPassword);
+    // Hash each student's ID as their individual default password
+    const studentsWithHashes = await Promise.all(
+      students.map(async (s) => ({
+        ...s,
+        passwordHash: await hash(s.student_id),
+      }))
+    );
 
-    // Record the upload
+    await StudentModel.replaceAllWithHashes(studentsWithHashes);
+
     const upload = await UploadModel.create({
       teacherId: req.user.id,
       filename: req.file.filename,
@@ -47,9 +52,6 @@ async function uploadClassList(req, res, next) {
   }
 }
 
-/**
- * GET /api/upload/history
- */
 async function getUploadHistory(req, res, next) {
   try {
     const uploads = await UploadModel.findAll(req.user.id);
